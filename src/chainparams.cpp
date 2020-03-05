@@ -288,7 +288,7 @@ public:
         consensus.vUpgrades[Consensus::UPGRADE_SAPLING].nActivationHeight = 280000;
 
         // The best chain should have at least this much work.
-        consensus.nMinimumChainWork = uint256S("0x00000000000000000000000000000000000000000000000000000001d0c4d9cd");
+        consensus.nMinimumChainWork = uint256S("0x0a960272fd596f0737f6a0a90c2ff559b0986427efe93b1da7f245820a2d5022");
 
         pchMessageStart[0] = 0x5A;
         pchMessageStart[1] = 0x1F;
@@ -364,7 +364,8 @@ public:
 
         checkpointData = (CCheckpointData){
             boost::assign::map_list_of
-            ( 0, uint256S("0x001")),
+            ( 0, uint256S("0x04ca468f5377ddd271e9ce66db999f4221066af27f2a1936deee28b4504f8b30"))
+            ( 1, uint256S("0x0a960272fd596f0737f6a0a90c2ff559b0986427efe93b1da7f245820a2d5022")),
             0,
             0,
             0
