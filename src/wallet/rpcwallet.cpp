@@ -1495,7 +1495,7 @@ UniValue movecmd(const UniValue& params, bool fHelp, const CPubKey& mypk)
     debit.nTime = nNow;
     debit.strOtherAccount = strTo;
     debit.strComment = strComment;
-    walletdb.WriteAccountingEntry(debit);
+    pwalletMain->AddAccountingEntry(debit, walletdb);
 
     // Credit
     CAccountingEntry credit;
@@ -1505,7 +1505,7 @@ UniValue movecmd(const UniValue& params, bool fHelp, const CPubKey& mypk)
     credit.nTime = nNow;
     credit.strOtherAccount = strFrom;
     credit.strComment = strComment;
-    walletdb.WriteAccountingEntry(credit);
+    pwalletMain->AddAccountingEntry(credit, walletdb);
 
     if (!walletdb.TxnCommit())
         throw JSONRPCError(RPC_DATABASE_ERROR, "database error");
@@ -2136,41 +2136,63 @@ UniValue listtransactions(const UniValue& params, bool fHelp, const CPubKey& myp
 
     LOCK2(cs_main, pwalletMain->cs_wallet);
 
-    string strAccount = "*";
+    string strAccount("*");
     if (params.size() > 0)
-        strAccount = params[0].get_str();
+        strAccount=params[0].get_str();
+
     int nCount = 10;
     if (params.size() > 1)
         nCount = params[1].get_int();
+    if (nCount < 0)
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Negative count");
+
     int nFrom = 0;
     if (params.size() > 2)
         nFrom = params[2].get_int();
+    if (nFrom < 0)
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Negative from");
+
     isminefilter filter = ISMINE_SPENDABLE;
     if(params.size() > 3)
         if(params[3].get_bool())
             filter = filter | ISMINE_WATCH_ONLY;
-
-    if (nCount < 0)
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "Negative count");
-    if (nFrom < 0)
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "Negative from");
+    string address("*");
+    CBitcoinAddress baddress;
+    CScript scriptPubKey;
+    if (params.size()>4) {
+        address=params[4].get_str();
+        if (address!=("*")) {
+            baddress = CBitcoinAddress(address);
+            if (!baddress.IsValid())
+                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid Safecoin address");
+            else
+                scriptPubKey = GetScriptForDestination(baddress.Get(), false);
+        }
+    }
 
     UniValue ret(UniValue::VARR);
-
-    std::list<CAccountingEntry> acentries;
-    CWallet::TxItems txOrdered = pwalletMain->OrderedTxItems(acentries, strAccount);
+    const CWallet::TxItems & txOrdered = pwalletMain->wtxOrdered;
 
     // iterate backwards until we have nCount items to return:
-    for (CWallet::TxItems::reverse_iterator it = txOrdered.rbegin(); it != txOrdered.rend(); ++it)
+    for (CWallet::TxItems::const_reverse_iterator it = txOrdered.rbegin(); it != txOrdered.rend(); ++it)
     {
         CWalletTx *const pwtx = (*it).second.first;
-        if (pwtx != 0)
-        {
-            //fprintf(stderr,"pwtx iter.%d %s\n",(int32_t)pwtx->nOrderPos,pwtx->GetHash().GetHex().c_str());
-            ListTransactions(*pwtx, strAccount, 0, true, ret, filter);
-        } //else fprintf(stderr,"null pwtx\n");
+        if (pwtx != nullptr){
+            if(baddress.IsValid()) {
+                for(const CTxOut& txout : pwtx->vout) {
+                    auto res = std::search(txout.scriptPubKey.begin(), txout.scriptPubKey.end(), scriptPubKey.begin(), scriptPubKey.end());
+                    if (res == txout.scriptPubKey.begin()) {
+                        ListTransactions(*pwtx, strAccount, 0, true, ret, filter);
+                        break;
+                    }
+                }
+            }
+            else {
+                ListTransactions(*pwtx, strAccount, 0, true, ret, filter);
+            }
+        }
         CAccountingEntry *const pacentry = (*it).second.second;
-        if (pacentry != 0)
+        if (pacentry != nullptr)
             AcentryToJSON(*pacentry, strAccount, ret);
 
         if ((int)ret.size() >= (nCount+nFrom)) break;
@@ -2269,8 +2291,7 @@ UniValue listaccounts(const UniValue& params, bool fHelp, const CPubKey& mypk)
         }
     }
 
-    list<CAccountingEntry> acentries;
-    CWalletDB(pwalletMain->strWalletFile).ListAccountCreditDebit("*", acentries);
+    const list<CAccountingEntry> & acentries = pwalletMain->laccentries;
     BOOST_FOREACH(const CAccountingEntry& entry, acentries)
         mapAccountBalances[entry.strAccount] += entry.nCreditDebit;
 

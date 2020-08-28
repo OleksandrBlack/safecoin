@@ -818,16 +818,16 @@ protected:
         try {
             for (std::pair<const uint256, CWalletTx>& wtxItem : mapWallet) {
                 auto wtx = wtxItem.second;
-                // We skip transactions for which mapSproutNoteData and mapSaplingNoteData
-                // are empty. This covers transactions that have no Sprout or Sapling data
+                // We skip transactions for which mapSproutNoteData is empty.
+                // This covers transactions that have no Sprout
                 // (i.e. are purely transparent), as well as shielding and unshielding
                 // transactions in which we only have transparent addresses involved.
-                if (!(wtx.mapSproutNoteData.empty() && wtx.mapSaplingNoteData.empty())) {
+                if (!(wtx.mapNoteData.empty())) {
                     if (!walletdb.WriteTx(wtxItem.first, wtx)) {
                         LogPrintf("SetBestChain(): Failed to write CWalletTx, aborting atomic write\n");
                         walletdb.TxnAbort();
                         return;
-                    }
+                   }
                 }
             }
             if (!walletdb.WriteWitnessCacheSize(nWitnessCacheSize)) {
@@ -974,6 +974,11 @@ public:
     std::map<uint256, SaplingOutPoint> mapSaplingNullifiersToNotes;
 
     std::map<uint256, CWalletTx> mapWallet;
+    std::list<CAccountingEntry> laccentries;
+
+    typedef std::pair<CWalletTx*, CAccountingEntry*> TxPair;
+    typedef std::multimap<int64_t, TxPair > TxItems;
+    TxItems wtxOrdered;
 
     int64_t nOrderPosNext;
     std::map<uint256, int> mapRequestCount;
@@ -1120,16 +1125,6 @@ public:
      */
     int64_t IncOrderPosNext(CWalletDB *pwalletdb = NULL);
 
-    typedef std::pair<CWalletTx*, CAccountingEntry*> TxPair;
-    typedef std::multimap<int64_t, TxPair > TxItems;
-
-    /**
-     * Get the wallet's activity log
-     * @return multimap of ordered transactions and accounting entries
-     * @warning Returned pointers are *only* valid within the scope of passed acentries
-     */
-    TxItems OrderedTxItems(std::list<CAccountingEntry>& acentries, std::string strAccount = "");
-
     void MarkDirty();
     bool UpdateNullifierNoteMap();
     void UpdateNullifierNoteMapWithTx(const CWalletTx& wtx);
@@ -1158,6 +1153,8 @@ public:
     bool CreateTransaction(const std::vector<CRecipient>& vecSend, CWalletTx& wtxNew, CReserveKey& reservekey, CAmount& nFeeRet, int& nChangePosRet,
                            std::string& strFailReason, const CCoinControl *coinControl = NULL, bool sign = true);
     bool CommitTransaction(CWalletTx& wtxNew, CReserveKey& reservekey);
+	
+    bool AddAccountingEntry(const CAccountingEntry&, CWalletDB & pwalletdb);
 
     static CFeeRate minTxFee;
     static CAmount GetMinimumFee(unsigned int nTxBytes, unsigned int nConfirmTarget, const CTxMemPool& pool);

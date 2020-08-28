@@ -123,13 +123,29 @@ rpcuser=yourrpcusername
 rpcpassword=yoursecurerpcpassword
 rpcbind=127.0.0.1
 txindex=1
-addnode=dnsseed.ipv6admin.com
+addnode=dnsseedua.local.support
+addnode=dnsseedna.local.support
+addnode=dnsseed.local.support
 addnode=dnsseed.fair.exchange
 addnode=explorer.safecoin.org
-addnode=45.63.13.60
-addnode=176.107.179.32
-addnode=node.safc.cc
-
+```
+#### Connect to a Safecoin hidden server
+To test your setup, try connecting via Tor on a different computer to a single Safecoin hidden server. Launch safecoind as follows:
+```
+onion=127.0.0.1:9050
+connect=safecoinifqbelf5.onion
+```
+To connect to multiple Tor nodes, use:
+```
+onion=127.0.0.1:9050
+addnode=safecoinxa4bcixr.onion
+addnode=safecoingj6j6hr2.onion
+addnode=safecoindma2sodz.onion
+addnode=safecoinl4sw6vuu.onion
+addnode=safecoingsa422tf.onion
+addnode=safecoinifqbelf5.onion
+dnsseed=0
+onlynet=onion
 ```
 ### Create your own Blockchain based on Safecoin
 
