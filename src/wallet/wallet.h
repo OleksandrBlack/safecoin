@@ -818,11 +818,11 @@ protected:
         try {
             for (std::pair<const uint256, CWalletTx>& wtxItem : mapWallet) {
                 auto wtx = wtxItem.second;
-                // We skip transactions for which mapSproutNoteData is empty.
-                // This covers transactions that have no Sprout
+                // We skip transactions for which mapSproutNoteData and mapSaplingNoteData
+                // are empty. This covers transactions that have no Sprout or Sapling data
                 // (i.e. are purely transparent), as well as shielding and unshielding
                 // transactions in which we only have transparent addresses involved.
-                if (!(wtx.mapNoteData.empty())) {
+                if (!(wtx.mapSproutNoteData.empty() && wtx.mapSaplingNoteData.empty())) {
                     if (!walletdb.WriteTx(wtxItem.first, wtx)) {
                         LogPrintf("SetBestChain(): Failed to write CWalletTx, aborting atomic write\n");
                         walletdb.TxnAbort();
