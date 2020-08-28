@@ -3013,7 +3013,7 @@ UniValue listunspent(const UniValue& params, bool fHelp, const CPubKey& mypk)
             "Results are an array of Objects, each of which has:\n"
             "{txid, vout, scriptPubKey, amount, confirmations}\n"
             "\nArguments:\n"
-            "1. minconf          (numeric, optional, default=1) The minimum confirmations to filter.  Hack: -1 sets verbose to 0. Returns simple list of addresses\n"
+            "1. minconf          (numeric, optional, default=1) The minimum confirmations to filter.  Hack: -1 sets verbose to 0. Returns simple list of addresses.  -2 for unset accounts only\n"
             "2. maxconf          (numeric, optional, default=9999999) The maximum confirmations to filter\n"
             "3. \"addresses\"    (string) A json array of " + strprintf("%s",safecoin_chainname()) + " addresses to filter\n"
             "    [\n"
@@ -3069,7 +3069,7 @@ UniValue listunspent(const UniValue& params, bool fHelp, const CPubKey& mypk)
     }
     
    int verbose = 1;
-   if(nMinDepth == -1)
+   if(nMinDepth <= -1)
         verbose = 0;
 
     
@@ -3107,6 +3107,7 @@ UniValue listunspent(const UniValue& params, bool fHelp, const CPubKey& mypk)
         entry.push_back(Pair("generated", out.tx->IsCoinBase()));
 
         if (fValidAddress) {
+	  if(!pwalletMain->mapAddressBook.count(address) && nMinDepth == -2 || nMinDepth == -1)
             simple.push_back(EncodeDestination(address));
             entry.push_back(Pair("address", EncodeDestination(address)));
             entry.push_back(Pair("segid", (int)safecoin_segid32((char*)EncodeDestination(address).c_str()) & 0x3f ));
@@ -4669,7 +4670,9 @@ UniValue z_sendmany(const UniValue& params, bool fHelp, const CPubKey& mypk)
 
     LOCK2(cs_main, pwalletMain->cs_wallet);
 
-    THROW_IF_SYNCING(SAFECOIN_INSYNC);
+
+    // THROW_IF_SYNCING(SAFECOIN_INSYNC);
+
 
     // Check that the from address is valid.
     auto fromaddress = params[0].get_str();
@@ -4985,7 +4988,9 @@ UniValue z_shieldcoinbase(const UniValue& params, bool fHelp, const CPubKey& myp
 
     LOCK2(cs_main, pwalletMain->cs_wallet);
 
-    THROW_IF_SYNCING(SAFECOIN_INSYNC);
+
+    //    THROW_IF_SYNCING(SAFECOIN_INSYNC);
+
 
     // Validate the from address
     auto fromaddress = params[0].get_str();
