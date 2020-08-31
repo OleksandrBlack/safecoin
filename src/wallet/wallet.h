@@ -34,7 +34,7 @@
 #include "utilstrencodings.h"
 #include "validationinterface.h"
 #include "wallet/crypter.h"
-#include "wallet/wallet_ismine.h"
+#include "script/ismine.h"
 #include "wallet/walletdb.h"
 #include "wallet/rpcwallet.h"
 #include "zcash/Address.hpp"
@@ -49,6 +49,8 @@
 #include <string>
 #include <utility>
 #include <vector>
+
+extern CWallet* pwalletMain;
 
 /**
  * Settings
@@ -80,6 +82,8 @@ extern unsigned int WITNESS_CACHE_SIZE;
 
 //! Size of HD seed in bytes
 static const size_t HD_WALLET_SEED_LENGTH = 32;
+
+extern const char * DEFAULT_WALLET_DAT;
 
 class CBlockIndex;
 class CCoinControl;
@@ -760,6 +764,7 @@ private:
 
     int64_t nNextResend;
     int64_t nLastResend;
+    int64_t nLastSetChain;
     bool fBroadcastTransactions;
 
     template <class T>
@@ -916,6 +921,7 @@ public:
         nOrderPosNext = 0;
         nNextResend = 0;
         nLastResend = 0;
+        nLastSetChain = 0;
         nTimeFirstKey = 0;
         fBroadcastTransactions = false;
         nWitnessCacheSize = 0;
@@ -1260,7 +1266,7 @@ public:
     void Flush(bool shutdown=false);
 
     //! Verify the wallet database and perform salvage if required
-    static bool Verify(const std::string& walletFile, std::string& warningString, std::string& errorString);
+    static bool Verify();
 
     /**
      * Address book entry changed.
@@ -1333,6 +1339,15 @@ public:
     // staking functions
     bool VerusSelectStakeOutput(CBlock *pBlock, arith_uint256 &hashResult, CTransaction &stakeSource, int32_t &voutNum, int32_t nHeight, uint32_t &bnTarget) const;
     int32_t VerusStakeTransaction(CBlock *pBlock, CMutableTransaction &txNew, uint32_t &bnTarget, arith_uint256 &hashResult, uint8_t *utxosig, CPubKey pk) const;
+
+    /* Returns the wallets help message */
+    static std::string GetWalletHelpString(bool showDebug);
+	
+    /* Initializes the wallet, returns a new CWallet instance or a null pointer in case of an error */
+    static bool InitLoadWallet(bool clearWitnessCaches);
+
+    /* Wallets parameter interaction */
+    static bool ParameterInteraction();
 };
 
 /** A key allocated from the key pool. */

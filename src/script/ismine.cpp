@@ -18,7 +18,7 @@
  *                                                                            *
  ******************************************************************************/
 
-#include "wallet_ismine.h"
+#include "ismine.h"
 
 #include "key.h"
 #include "keystore.h"
