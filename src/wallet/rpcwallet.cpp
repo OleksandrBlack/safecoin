@@ -2081,7 +2081,7 @@ UniValue listtransactions(const UniValue& params, bool fHelp, const CPubKey& myp
     if (!EnsureWalletIsAvailable(fHelp))
         return NullUniValue;
 
-    if (fHelp || params.size() > 4)
+    if (fHelp || params.size() > 5)
         throw runtime_error(
             "listtransactions ( \"account\" count from includeWatchonly)\n"
             "\nReturns up to 'count' most recent transactions skipping the first 'from' transactions for account 'account'.\n"
@@ -2090,6 +2090,7 @@ UniValue listtransactions(const UniValue& params, bool fHelp, const CPubKey& myp
             "2. count          (numeric, optional, default=10) The number of transactions to return\n"
             "3. from           (numeric, optional, default=0) The number of transactions to skip\n"
             "4. includeWatchonly (bool, optional, default=false) Include transactions to watchonly addresses (see 'importaddress')\n"
+            "5. address (string, optional) Include only transactions involving this address\n"
             "\nResult:\n"
             "[\n"
             "  {\n"
