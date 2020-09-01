@@ -24,6 +24,7 @@
 #include "keystore.h"
 #include "script/script.h"
 #include "script/standard.h"
+#include "script/sign.h"
 #include "cc/eval.h"
 
 #include <boost/foreach.hpp>
@@ -67,7 +68,7 @@ isminetype IsMine(const CKeyStore &keystore, const CScript& _scriptPubKey)
 
     if (!Solver(scriptPubKey, whichType, vSolutions)) {
         if (keystore.HaveWatchOnly(scriptPubKey))
-            return ISMINE_WATCH_ONLY;
+            return ISMINE_WATCH_UNSOLVABLE;
         return ISMINE_NO;
     }
 
@@ -122,7 +123,10 @@ isminetype IsMine(const CKeyStore &keystore, const CScript& _scriptPubKey)
     }
     }
 
-    if (keystore.HaveWatchOnly(scriptPubKey))
-        return ISMINE_WATCH_ONLY;
+    if (keystore.HaveWatchOnly(scriptPubKey)) {
+        // TODO: This could be optimized some by doing some work after the above solver
+        SignatureData sigs;
+        return ProduceSignature(DummySignatureCreator(&keystore), scriptPubKey, sigs, 0) ? ISMINE_WATCH_SOLVABLE : ISMINE_WATCH_UNSOLVABLE;
+    }
     return ISMINE_NO;
 }
