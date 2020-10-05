@@ -1,6 +1,5 @@
 
 [![twitter](https://img.shields.io/twitter/follow/safecoins?style=social)](https://twitter.com/safecoins)
-[![discord](https://img.shields.io/discord/412898016371015680)](https://discord.gg/rKK7huf)
 
 ---
 ![Safecoin Logo](https://raw.githubusercontent.com/Fair-Exchange/safecoinwiki/master/Logos/SafeCoin/SafeCoin-Logo-with-text.png "Safecoin Logo")
