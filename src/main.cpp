@@ -114,6 +114,7 @@ bool fPruneMode = false;
 bool fIsBareMultisigStd = true;
 bool fCheckBlockIndex = false;
 bool fCheckpointsEnabled = true;
+bool fIBDSkipTxVerification = DEFAULT_IBD_SKIP_TX_VERIFICATION;
 bool fCoinbaseEnforcedProtectionEnabled = true;
 size_t nCoinCacheUsage = 5000 * 300;
 uint64_t nPruneTarget = 0;
@@ -3458,6 +3459,21 @@ static int64_t nTimeTotal = 0;
 bool FindBlockPos(int32_t tmpflag,CValidationState &state, CDiskBlockPos &pos, unsigned int nAddSize, unsigned int nHeight, uint64_t nTime, bool fKnown = false);
 bool ReceivedBlockTransactions(const CBlock &block, CValidationState& state, CBlockIndex *pindexNew, const CDiskBlockPos& pos);
 
+/**
+ * Determine whether to do transaction checks when validating blocks.
+ * Returns `false` (allowing transaction checks to be skipped) only if all
+ * of the following are true:
+ *   - we're currently in initial block download
+ *   - the `-ibdskiptxverification` flag is set
+ *   - the block under inspection is an ancestor of the latest checkpoint.
+ */
+static bool ShouldCheckTransactions(const CChainParams& chainparams, const CBlockIndex* pindex) {
+    return !(IsInitialBlockDownload()
+        && fIBDSkipTxVerification
+        && fCheckpointsEnabled
+        && Checkpoints::IsAncestorOfLastCheckpoint(chainparams.Checkpoints(), pindex));
+}
+
 bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pindex, CCoinsViewCache& view, bool fJustCheck,bool fCheckPOW)
 {
     CDiskBlockPos blockPos;
@@ -3469,20 +3485,24 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
     //fprintf(stderr,"connectblock ht.%d\n",(int32_t)pindex->GetHeight());
     AssertLockHeld(cs_main);
     bool fExpensiveChecks = true;
-    if (fCheckpointsEnabled) {
-        CBlockIndex *pindexLastCheckpoint = Checkpoints::GetLastCheckpoint(chainparams.Checkpoints());
-        if (pindexLastCheckpoint && pindexLastCheckpoint->GetAncestor(pindex->GetHeight()) == pindex) {
-            // This block is an ancestor of a checkpoint: disable script checks
-            fExpensiveChecks = false;
-        }
+
+    // If this block is an ancestor of a checkpoint, disable expensive checks
+    if (fCheckpointsEnabled && Checkpoints::IsAncestorOfLastCheckpoint(chainparams.Checkpoints(), pindex)) {
+        fExpensiveChecks = false;
     }
-    auto verifier = libzcash::ProofVerifier::Strict();
-    auto disabledVerifier = libzcash::ProofVerifier::Disabled();
+	
+    // proof verification is expensive, disable if possible
+    auto verifier = fExpensiveChecks ? libzcash::ProofVerifier::Strict() : libzcash::ProofVerifier::Disabled();
+
+    // If in initial block download, and this block is an ancestor of a checkpoint,
+    // and -ibdskiptxverification is set, disable all transaction checks.
+    bool fCheckTransactions = ShouldCheckTransactions(chainparams, pindex);
+	
     int32_t futureblock;
     CAmount blockReward = GetBlockSubsidy(pindex->GetHeight(), chainparams.GetConsensus());
     uint64_t notarypaycheque = 0;
     // Check it again to verify JoinSplit proofs, and in case a previous version let a bad block in
-    if (!CheckBlock(&futureblock,pindex->GetHeight(),pindex,block, state, fExpensiveChecks ? verifier : disabledVerifier, fCheckPOW, !fJustCheck) || futureblock != 0 )
+    if (!CheckBlock(&futureblock,pindex->GetHeight(),pindex,block, state, verifier, fCheckPOW, !fJustCheck, fCheckTransactions) || futureblock != 0 )
     {
         //fprintf(stderr,"checkblock failure in connectblock futureblock.%d\n",futureblock);
         return false;
@@ -5180,9 +5200,15 @@ bool CheckBlockHeader(int32_t *futureblockp,int32_t height,CBlockIndex *pindex, 
 int32_t safecoin_check_deposit(int32_t height,const CBlock& block,uint32_t prevtime);
 int32_t safecoin_checkPOW(int64_t stakeTxValue,int32_t slowflag,CBlock *pblock,int32_t height);
 
-bool CheckBlock(int32_t *futureblockp,int32_t height,CBlockIndex *pindex,const CBlock& block, CValidationState& state,
-                libzcash::ProofVerifier& verifier,
-                bool fCheckPOW, bool fCheckMerkleRoot)
+bool CheckBlock(int32_t *futureblockp,
+				int32_t height,
+				CBlockIndex *pindex,
+				const CBlock& block,
+				CValidationState& state,
+				libzcash::ProofVerifier& verifier,
+				bool fCheckPOW,
+				bool fCheckMerkleRoot,
+				bool fCheckTransactions)
 {
     uint8_t pubkey33[33]; uint256 hash; uint32_t tiptime = (uint32_t)block.nTime;
     // These are checks that are independent of context.
@@ -5269,7 +5295,10 @@ bool CheckBlock(int32_t *futureblockp,int32_t height,CBlockIndex *pindex,const C
         //LogPrintf("fastsync: Skipping tx checks\n");
         return true;
     }
-		
+
+    // skip all transaction checks if this flag is not set
+    if (!fCheckTransactions) return true;
+	
     // Check transactions
     CTransaction sTx;
     CTransaction *ptx = NULL;
@@ -5500,11 +5529,19 @@ bool ContextualCheckBlockHeader(const CBlockHeader& block, CValidationState& sta
     return true;
 }
 
-bool ContextualCheckBlock(int32_t slowflag,const CBlock& block, CValidationState& state, CBlockIndex * const pindexPrev)
+bool ContextualCheckBlock(	int32_t slowflag,
+							const CBlock& block,
+							CValidationState& state,
+							CBlockIndex * const pindexPrev,
+							bool fCheckTransactions)
 {
     const int nHeight = pindexPrev == NULL ? 0 : pindexPrev->GetHeight() + 1;
     const Consensus::Params& consensusParams = Params().GetConsensus();
     bool sapling = NetworkUpgradeActive(nHeight, consensusParams, Consensus::UPGRADE_SAPLING);
+
+    // If this is initial block download and "ibdskiptxverification" is set, we'll skip verifying the transactions
+    if (!fCheckTransactions)
+        return true;
 
     // Check that all transactions are finalized
     for (uint32_t i = 0; i < block.vtx.size(); i++) {
@@ -5678,10 +5715,15 @@ bool AcceptBlock(int32_t *futureblockp,CBlock& block, CValidationState& state, C
         if (fTooFarAhead) return true;      // Block height is too high
     }
 
-    // See method docstring for why this is always disabled
+    // See method docstring for why this is always disabled. The only caller of
+    // AcceptBlock (ProcessNewBlock) will fully check proofs when it eventually
+    // delegates to `ConnectTip` and thereafter `ConnectBlock`. This
+    // arrangement is a bit fragile and should be reconsidered.
     auto verifier = libzcash::ProofVerifier::Disabled();
-    bool fContextualCheckBlock = ContextualCheckBlock(0,block, state, pindex->pprev);
-    if ( (!CheckBlock(futureblockp,pindex->GetHeight(),pindex,block, state, verifier,0)) || !fContextualCheckBlock )
+    bool fCheckTransactions = ShouldCheckTransactions(chainparams, pindex);
+    bool fContextualCheckBlock = ContextualCheckBlock(0,block, state, pindex->pprev, fCheckTransactions);
+	
+    if ( (!CheckBlock(futureblockp,pindex->GetHeight(),pindex,block, state, verifier,0, true, true, fCheckTransactions)) || !fContextualCheckBlock )
     {
         static int32_t saplinght = -1;
         CBlockIndex *tmpptr;
@@ -5921,13 +5963,14 @@ bool TestBlockValidity(CValidationState &state, const CBlock& block, CBlockIndex
         //fprintf(stderr,"TestBlockValidity failure A checkPOW.%d\n",fCheckPOW);
         return false;
     }
+    // The following may be duplicative of the `CheckBlock` call within `ConnectBlock`
     int32_t futureblock;
-    if (!CheckBlock(&futureblock,indexDummy.GetHeight(),0,block, state, verifier, fCheckPOW, fCheckMerkleRoot))
+    if (!CheckBlock(&futureblock,indexDummy.GetHeight(),0,block, state, verifier, fCheckPOW, fCheckMerkleRoot, true))
     {
         //fprintf(stderr,"TestBlockValidity failure B checkPOW.%d\n",fCheckPOW);
         return false;
     }
-    if (!ContextualCheckBlock(0,block, state, pindexPrev))
+    if (!ContextualCheckBlock(0,block, state, pindexPrev, true))
     {
         //fprintf(stderr,"TestBlockValidity failure C checkPOW.%d\n",fCheckPOW);
         return false;
@@ -6373,8 +6416,11 @@ bool CVerifyDB::VerifyDB(CCoinsView *coinsview, int nCheckLevel, int nCheckDepth
     CBlockIndex* pindexFailure = NULL;
     int nGoodTransactions = 0;
     CValidationState state;
+	
+    // Flags used to permit skipping checks for efficiency
     // No need to verify JoinSplits twice
     auto verifier = libzcash::ProofVerifier::Disabled();
+    bool fCheckTransactions = true;
     //fprintf(stderr,"start VerifyDB %u\n",(uint32_t)time(NULL));
     for (CBlockIndex* pindex = chainActive.Tip(); pindex && pindex->pprev; pindex = pindex->pprev)
     {
@@ -6388,7 +6434,8 @@ bool CVerifyDB::VerifyDB(CCoinsView *coinsview, int nCheckLevel, int nCheckDepth
             return error("VerifyDB(): *** ReadBlockFromDisk failed at %d, hash=%s", pindex->GetHeight(), pindex->GetBlockHash().ToString());
         // check level 1: verify block validity
         int32_t futureblock;
-        if (nCheckLevel >= 1 && !CheckBlock(&futureblock,pindex->GetHeight(),pindex,block, state, verifier,0) )
+        fCheckTransactions = ShouldCheckTransactions(chainparams, pindex);
+        if (nCheckLevel >= 1 && !CheckBlock(&futureblock,pindex->GetHeight(),pindex,block, state, verifier,0, true, true, fCheckTransactions))
             return error("VerifyDB(): *** found bad block at %d, hash=%s\n", pindex->GetHeight(), pindex->GetBlockHash().ToString());
         // check level 2: verify undo validity
         if (nCheckLevel >= 2 && pindex) {
@@ -7973,32 +8020,6 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
             // Nothing interesting. Stop asking this peers for more headers.
             return true;
         }
-
-        bool hasNewHeaders = true;
-
-        // only SAFE have checkpoints in sources, so, using IsInitialBlockDownload() here is
-        // not applicable for assetchains (!)
-        if (GetBoolArg("-fixibd", DEFAULT_FIXIBD) && ASSETCHAINS_SYMBOL[0] == 0 && IsInitialBlockDownload()) {
-
-            /**
-             * This is experimental feature avaliable only for SAFE during initial block download running with
-             * -fixibd arg. Fix was offered by domob1812 here:
-             * https://github.com/bitcoin/bitcoin/pull/8054/files#diff-7ec3c68a81efff79b6ca22ac1f1eabbaR5099
-             * but later it was reverted bcz of synchronization stuck issues.
-             * Explanation:
-             * https://github.com/bitcoin/bitcoin/pull/8306#issuecomment-231584578
-             * Limiting this fix only to IBD and with special command line arg makes it safe, bcz
-             * default behavior is not to ask for new headers.
-            */
-
-            // If we already know the last header in the message, then it contains
-            // no new information for us.  In this case, we do not request
-            // more headers later.  This prevents multiple chains of redundant
-            // getheader requests from running in parallel if triggered by incoming
-            // blocks while the node is still in initial headers sync.
-            hasNewHeaders = (mapBlockIndex.count(headers.back().GetHash()) == 0);
-            LogPrint("net", "IBD fix enabled: peer=%d\n", pfrom->id);
-        }
 		
         CBlockIndex *pindexLast = NULL;
         BOOST_FOREACH(const CBlockHeader& header, headers) {
@@ -8025,10 +8046,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
         if (pindexLast)
             UpdateBlockAvailability(pfrom->GetId(), pindexLast->GetBlockHash());
 		
-        if (nCount == MAX_HEADERS_RESULTS && pindexLast && !hasNewHeaders)
-            LogPrint("net", "IBD fix applied: no more getheaders (%d) to send to peer=%d (startheight:%d)\n", pindexLast->GetHeight(), pfrom->id, pfrom->nStartingHeight);
-
-        if (nCount == MAX_HEADERS_RESULTS && pindexLast && hasNewHeaders) {
+        if (nCount == MAX_HEADERS_RESULTS && pindexLast) {
             // Headers message had its maximum size; the peer may have more headers.
             // TODO: optimize: if pindexLast is an ancestor of chainActive.Tip or pindexBestHeader, continue
             // from there instead.

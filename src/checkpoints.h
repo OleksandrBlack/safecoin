@@ -54,6 +54,7 @@ struct CCheckpointData {
 
 double GuessVerificationProgress(const CChainParams::CCheckpointData& data, CBlockIndex* pindex, bool fSigchecks = true);
 
+bool IsAncestorOfLastCheckpoint(const CChainParams::CCheckpointData& data, const CBlockIndex* pindex);
 } //namespace Checkpoints
 
 #endif // BITCOIN_CHECKPOINTS_H
