@@ -7997,7 +7997,9 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
             // getheader requests from running in parallel if triggered by incoming
             // blocks while the node is still in initial headers sync.
             hasNewHeaders = (mapBlockIndex.count(headers.back().GetHash()) == 0);
+            LogPrint("net", "IBD fix enabled: peer=%d\n", pfrom->id);
         }
+		
         CBlockIndex *pindexLast = NULL;
         BOOST_FOREACH(const CBlockHeader& header, headers) {
             //printf("size.%i, solution size.%i\n", (int)sizeof(header), (int)header.nSolution.size());
@@ -8022,6 +8024,9 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
 
         if (pindexLast)
             UpdateBlockAvailability(pfrom->GetId(), pindexLast->GetBlockHash());
+		
+        if (nCount == MAX_HEADERS_RESULTS && pindexLast && !hasNewHeaders)
+            LogPrint("net", "IBD fix applied: no more getheaders (%d) to send to peer=%d (startheight:%d)\n", pindexLast->GetHeight(), pfrom->id, pfrom->nStartingHeight);
 
         if (nCount == MAX_HEADERS_RESULTS && pindexLast && hasNewHeaders) {
             // Headers message had its maximum size; the peer may have more headers.
